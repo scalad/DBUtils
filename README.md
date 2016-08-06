@@ -1,6 +1,106 @@
 ##Apache DBUtils封装使用
+Apache DBUtils是个小巧的JDBC轻量级封装的工具包，其最核心的特性是结果集的封装，<br>
+可以直接将查询出来的结果集封装成JavaBean，这就为我们做了最枯燥乏味、最容易出错的<br>
+一大部分工作。<br>
+大部分开发人员在生成环境中更多的是依靠Hibernate、Ibatis、Spring JDBC、JPA等大厂<br>
+提供的持久层技术解决方案，或者是企业内部自己研发的持久层技术。但无论如何，使用这些<br>
+技术的初衷和本质都是为了能够减少企业开发成本，提高生产效率，降低耦合。<br>
+放眼企业级项目，Hibernate等ORM产品是首选，而互联网领域，大部分开发人员往往并不会<br>
+在生产环境中上这些ORM技术，原因很简单，要的就是效率，其次都不重要。对于刚接触SQL和<br>
+JDBC的开发人员，最引以为傲的就是希望能够在日后编写复杂的SQL语句，以及会使用诸如Hibernate、Ibatis等第三方持久层技术，并且极力的撇清与传统JDBC技术的关系，但笔者不得不认为,
+这是一种普遍业界存在的“病态”！<br>
+如果是企业级的项目，尤其是跟金融相关的业务，SQL语句或许会非常复杂，并且关联着事物。<br>
+但互联网项目却并非如此，在互联网项目中，看你牛不牛逼并不是取决于你能否写出一条复杂<br>
+的SQL语句，而是看你能否将原本一条复杂的SQL语句拆散成单条SQL，一句一句的执行；并且<br>
+脱离Hibernate等ORM产品后，能否使用传统的JDBC技术完成一条简单的CRUD操作，这才是牛<br>
+逼！是的，你没有听错，互联网确确实实就是这么玩，还原最本质的东西，才是追求性能的不二选择<br>
+####在使用DBUtils之前首先需要获取Connection或者DataBase连接
+	package com.silence.utils;
 
+	import java.beans.PropertyVetoException;
+	import java.io.IOException;
+	import java.io.InputStream;
+	import java.sql.Connection;
+	import java.sql.SQLException;
+	import java.util.Properties;
 	
+	import com.mchange.v2.c3p0.ComboPooledDataSource;
+	
+	public class ConnectionFactory {
+
+	private static String driver;
+	private static String dburl;
+	private static String user;
+	private static String password;
+	public static ComboPooledDataSource dataSource;
+
+	private static final ConnectionFactory factory = new ConnectionFactory();
+
+	private Connection conn = null;
+
+	// 初始化数据库连接池
+	static {
+		Properties prop = new Properties();
+		try {
+			InputStream inputStream = ConnectionFactory.class.
+			getClassLoader().getResourceAsStream("db.properties");
+			prop.load(inputStream);
+			driver = prop.getProperty("driver");
+			dburl = prop.getProperty("dburl");
+			user = prop.getProperty("user");
+			password = prop.getProperty("password");
+			dataSource = new ComboPooledDataSource();
+			dataSource.setUser(user);
+			dataSource.setPassword(password);
+			dataSource.setJdbcUrl(dburl);
+			dataSource.setDriverClass(driver);
+			dataSource.setInitialPoolSize(10);
+			dataSource.setMinPoolSize(5);
+			dataSource.setMaxPoolSize(50);
+			dataSource.setMaxStatements(100);
+			dataSource.setMaxIdleTime(60);
+		} catch (IOException e) {
+			System.out.println("the file of datasouce configuration is not exist!");
+			e.printStackTrace();
+		} catch (PropertyVetoException e) {
+			System.out.println("datasouce config error!");
+			e.printStackTrace();
+		}
+		System.out.println("datasouce init finish........!");
+	}
+
+	private ConnectionFactory() {
+	}
+
+	public static ConnectionFactory getInstance() {
+		return factory;
+	}
+
+	public static ComboPooledDataSource getDataSouce(){
+		return dataSource;
+	}
+	//获取连接
+	public Connection getConnection() {
+		if (null != dataSource) {
+			try {
+				conn = dataSource.getConnection();
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+		}
+		return conn;
+	}
+	}
+
+该文件从db.properties中读取数据库的配置文件并使用C3P0创建数据库连接池，该配置文件如下：
+	
+	driver=com.mysql.jdbc.Driver
+	dburl=jdbc:mysql://localhost:3306/jdbc
+	user=root
+	password=root
+	
+然后我们就可以使用DBUtils来操作数据库了，下面是使用DBUtils再次封装的工具代码，使用该代码可以使你更快的操纵数据库。
+
 	import java.sql.Connection;
 	import java.util.List;
 	import java.util.Map;
@@ -18,40 +118,6 @@
 	
 	public static QueryRunner getQueryRunner() {
 		return new QueryRunner(ConnectionFactory.getDataSouce());
-	}
-
-	/**
-	 * 开启事务
-	 */
-	public static void beginTransaction(Connection conn) {
-		try {
-			// 开启事务
-			conn.setAutoCommit(false);
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	/**
-	 * 回滚事务
-	 */
-	public static void rollback(Connection conn) {
-		try {
-			conn.rollback();
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	/**
-	 * 提交事务
-	 */
-	public static void commit(Connection conn) {
-		try {
-			conn.commit();
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		}
 	}
 
 	/**
@@ -653,5 +719,37 @@
 		}
 		return 0;
 	}
+		/**
+	 * 开启事务
+	 */
+	public static void beginTransaction(Connection conn) {
+		try {
+			// 开启事务
+			conn.setAutoCommit(false);
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
 
+	/**
+	 * 回滚事务
+	 */
+	public static void rollback(Connection conn) {
+		try {
+			conn.rollback();
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	/**
+	 * 提交事务
+	 */
+	public static void commit(Connection conn) {
+		try {
+			conn.commit();
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
 	}
